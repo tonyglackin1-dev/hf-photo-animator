@@ -21,13 +21,13 @@ actor PhotoPipeline {
         return try await colourizer.colourise(image: prepared, context: context)
     }
 
-    func preparePortraitAnimationPreview(_ image: UIImage) async throws -> UIImage {
+    func preparePortraitAnimationFrames(_ image: UIImage) async throws -> [UIImage] {
         let prepared = try normalized(image)
         let faces = try await faceService.faces(in: prepared)
         guard let dominantFace = faces.max(by: { $0.boundingBox.width * $0.boundingBox.height < $1.boundingBox.width * $1.boundingBox.height }) else {
             throw PipelineError.noFace
         }
-        return try await animator.previewFrame(image: prepared, face: dominantFace, context: context)
+        return try await animator.previewFrames(image: prepared, face: dominantFace, context: context)
     }
 
     private func normalized(_ image: UIImage) throws -> UIImage {
