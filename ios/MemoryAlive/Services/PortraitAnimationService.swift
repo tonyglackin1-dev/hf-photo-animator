@@ -4,45 +4,67 @@ import UIKit
 import Vision
 
 actor PortraitAnimationService {
-    func previewFrame(image: UIImage, face: VNFaceObservation, context: CIContext) async throws -> UIImage {
-        guard var ciImage = CIImage(image: image) else {
+    func previewFrames(image: UIImage, face: VNFaceObservation, context: CIContext) async throws -> [UIImage] {
+        guard let baseImage = CIImage(image: image) else {
             throw PipelineError.invalidImage
         }
         guard let landmarks = face.landmarks else {
             throw PipelineError.processingFailed("No facial landmarks were available for animation.")
         }
 
-        let extent = ciImage.extent
+        let extent = baseImage.extent
         let faceRect = imageRect(for: face.boundingBox, in: extent)
         let faceWidth = faceRect.width
 
-        if let leftEye = landmarks.leftEye {
-            let center = averagePoint(of: leftEye, faceRect: faceRect)
-            ciImage = applyBump(to: ciImage, center: center, radius: faceWidth * 0.12, scale: -0.035)
+        let phases: [CGFloat] = [0.0, 0.35, 0.7, 1.0, 0.7, 0.35, 0.0, -0.2]
+        var frames: [UIImage] = []
+
+        for phase in phases {
+            var ciImage = baseImage
+
+            if let leftEye = landmarks.leftEye {
+                let center = averagePoint(of: leftEye, faceRect: faceRect)
+                ciImage = applyBump(
+                    to: ciImage,
+                    center: CGPoint(x: center.x + faceWidth * 0.003 * phase, y: center.y),
+                    radius: faceWidth * 0.12,
+                    scale: Float(-0.020 * phase)
+                )
+            }
+
+            if let rightEye = landmarks.rightEye {
+                let center = averagePoint(of: rightEye, faceRect: faceRect)
+                ciImage = applyBump(
+                    to: ciImage,
+                    center: CGPoint(x: center.x + faceWidth * 0.003 * phase, y: center.y),
+                    radius: faceWidth * 0.12,
+                    scale: Float(-0.020 * phase)
+                )
+            }
+
+            if let outerLips = landmarks.outerLips {
+                let center = averagePoint(of: outerLips, faceRect: faceRect)
+                ciImage = applyBump(
+                    to: ciImage,
+                    center: CGPoint(x: center.x, y: center.y + faceWidth * 0.010 * phase),
+                    radius: faceWidth * 0.18,
+                    scale: Float(0.025 * phase)
+                )
+            }
+
+            let transform = CGAffineTransform(
+                translationX: faceWidth * 0.004 * phase,
+                y: faceWidth * 0.0015 * phase
+            ).rotated(by: 0.0018 * phase)
+
+            let rendered = ciImage.transformed(by: transform).cropped(to: extent)
+            guard let cgImage = context.createCGImage(rendered, from: extent) else {
+                throw PipelineError.processingFailed("Could not render portrait animation frames.")
+            }
+            frames.append(UIImage(cgImage: cgImage))
         }
 
-        if let rightEye = landmarks.rightEye {
-            let center = averagePoint(of: rightEye, faceRect: faceRect)
-            ciImage = applyBump(to: ciImage, center: center, radius: faceWidth * 0.12, scale: -0.035)
-        }
-
-        if let outerLips = landmarks.outerLips {
-            let center = averagePoint(of: outerLips, faceRect: faceRect)
-            ciImage = applyBump(to: ciImage, center: CGPoint(x: center.x, y: center.y + faceWidth * 0.012), radius: faceWidth * 0.19, scale: 0.045)
-        }
-
-        let subtleHeadShift = CGAffineTransform(
-            translationX: faceWidth * 0.006,
-            y: faceWidth * 0.002
-        ).rotated(by: 0.0025)
-
-        let shifted = ciImage.transformed(by: subtleHeadShift)
-        let crop = shifted.cropped(to: extent)
-
-        guard let cgImage = context.createCGImage(crop, from: extent) else {
-            throw PipelineError.processingFailed("Could not render the animated portrait frame.")
-        }
-        return UIImage(cgImage: cgImage)
+        return frames
     }
 
     private func applyBump(
