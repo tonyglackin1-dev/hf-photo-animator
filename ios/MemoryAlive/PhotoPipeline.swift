@@ -44,12 +44,14 @@ enum PipelineError: LocalizedError {
     case invalidImage
     case noFace
     case modelMissing(String)
+    case processingFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .invalidImage: return "The photo could not be prepared."
         case .noFace: return "No clear portrait face was detected."
         case .modelMissing(let name): return "Native model \(name) has not been added to the Xcode target yet."
+        case .processingFailed(let message): return message
         }
     }
 }
