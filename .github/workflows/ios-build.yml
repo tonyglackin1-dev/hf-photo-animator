@@ -32,6 +32,17 @@ jobs:
           unzip -q /tmp/RealESRGAN_general_522_fp16.zip -d MemoryAlive/Models
           test -d MemoryAlive/Models/RealESRGAN_general_522_fp16.mlpackage
 
+      - name: Fetch DDColor Core ML model
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          mkdir -p MemoryAlive/Models
+          curl -L --fail --retry 3 \
+            -o /tmp/DDColor_Tiny.mlpackage.zip \
+            https://github.com/john-rocky/CoreML-Models/releases/download/ddcolor-v1/DDColor_Tiny.mlpackage.zip
+          unzip -q /tmp/DDColor_Tiny.mlpackage.zip -d MemoryAlive/Models
+          test -d MemoryAlive/Models/DDColor_Tiny.mlpackage
+
       - name: Generate Xcode project
         working-directory: ios
         run: xcodegen generate
