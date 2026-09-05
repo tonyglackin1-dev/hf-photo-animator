@@ -15,15 +15,21 @@ final class MemoryAliveViewModel: ObservableObject {
     }
 
     func restore() {
-        run { try await pipeline.restore($0) }
+        run { [self] image in
+            try await self.pipeline.restore(image)
+        }
     }
 
     func colourise() {
-        run { try await pipeline.colourise($0) }
+        run { [self] image in
+            try await self.pipeline.colourise(image)
+        }
     }
 
     func animatePortrait() {
-        run { try await pipeline.preparePortraitAnimationPreview($0) }
+        run { [self] image in
+            try await self.pipeline.preparePortraitAnimationPreview(image)
+        }
     }
 
     private func run(_ operation: @escaping (UIImage) async throws -> UIImage) {
