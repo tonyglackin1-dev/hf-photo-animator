@@ -61,6 +61,11 @@ struct ContentView: View {
                 }
             }
         }
+        .task {
+            #if DEBUG
+            await loadCIDemoIfRequested()
+            #endif
+        }
     }
 
     @ViewBuilder
@@ -75,4 +80,28 @@ struct ContentView: View {
         .buttonStyle(.bordered)
         .disabled(model.previewImage == nil || model.isWorking)
     }
+
+    #if DEBUG
+    private func loadCIDemoIfRequested() async {
+        let environment = ProcessInfo.processInfo.environment
+        guard let urlString = environment["MEMORY_ALIVE_DEMO_IMAGE_URL"],
+              let url = URL(string: urlString) else { return }
+
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            guard let image = UIImage(data: data) else { return }
+            await MainActor.run {
+                model.load(image: image)
+                switch environment["MEMORY_ALIVE_DEMO_ACTION"] {
+                case "restore": model.restore()
+                case "colourise": model.colourise()
+                case "animate": model.animatePortrait()
+                default: break
+                }
+            }
+        } catch {
+            await MainActor.run { model.status = "CI demo failed: \(error.localizedDescription)" }
+        }
+    }
+    #endif
 }
