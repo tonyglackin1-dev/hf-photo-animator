@@ -59,5 +59,33 @@ jobs:
             -scheme MemoryAlive \
             -sdk iphonesimulator \
             -configuration Debug \
+            -derivedDataPath /tmp/MemoryAliveDerived \
             CODE_SIGNING_ALLOWED=NO \
             build
+
+      - name: Boot simulator and launch visual demo
+        run: |
+          set -euo pipefail
+          DEVICE_ID=$(xcrun simctl create "MemoryAlive CI" "com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro" "com.apple.CoreSimulator.SimRuntime.iOS-18-5")
+          xcrun simctl boot "$DEVICE_ID"
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+          xcrun simctl install "$DEVICE_ID" /tmp/MemoryAliveDerived/Build/Products/Debug-iphonesimulator/MemoryAlive.app
+          mkdir -p /tmp/memory-alive-proof
+          SIMCTL_CHILD_MEMORY_ALIVE_DEMO_IMAGE_URL="https://commons.wikimedia.org/wiki/Special:Redirect/file/HardingLooksBowtie.jpg" \
+          SIMCTL_CHILD_MEMORY_ALIVE_DEMO_ACTION="animate" \
+          xcrun simctl launch "$DEVICE_ID" com.tonyglackin.memoryalive
+          sleep 8
+          xcrun simctl io "$DEVICE_ID" screenshot /tmp/memory-alive-proof/bring-to-life.png
+          xcrun simctl io "$DEVICE_ID" recordVideo --codec=h264 /tmp/memory-alive-proof/bring-to-life.mp4 >/tmp/recordvideo.log 2>&1 &
+          RECORDER_PID=$!
+          sleep 8
+          kill -INT "$RECORDER_PID" || true
+          wait "$RECORDER_PID" || true
+          ls -lh /tmp/memory-alive-proof
+
+      - name: Upload visual proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-alive-simulator-proof
+          path: /tmp/memory-alive-proof/
+          if-no-files-found: error
