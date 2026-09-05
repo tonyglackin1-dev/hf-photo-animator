@@ -33,7 +33,7 @@ actor ColourizationService {
         let provider = try MLDictionaryFeatureProvider(dictionary: [
             "image": MLFeatureValue(multiArray: inputArray)
         ])
-        let prediction = try model.prediction(from: provider)
+        let prediction = try await model.prediction(from: provider)
         guard let abArray = prediction.featureValue(for: "ab_channels")?.multiArrayValue else {
             throw PipelineError.processingFailed("DDColor returned no colour channels.")
         }
@@ -217,7 +217,7 @@ actor ColourizationService {
         let gl = linear(g)
         let bl = linear(b)
         var x = rl * 0.4124564 + gl * 0.3575761 + bl * 0.1804375
-        var y = rl * 0.2126729 + gl * 0.7151522 + bl * 0.0721750
+        let y = rl * 0.2126729 + gl * 0.7151522 + bl * 0.0721750
         var z = rl * 0.0193339 + gl * 0.1191920 + bl * 0.9503041
         x /= 0.95047
         z /= 1.08883
