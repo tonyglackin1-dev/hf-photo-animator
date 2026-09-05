@@ -21,6 +21,17 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Fetch Real-ESRGAN Core ML model
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          mkdir -p MemoryAlive/Models
+          curl -L --fail --retry 3 \
+            -o /tmp/RealESRGAN_general_522_fp16.zip \
+            https://github.com/hanxiao/real-esrgan-coreml/releases/download/v1.0.0/RealESRGAN_general_522_fp16.zip
+          unzip -q /tmp/RealESRGAN_general_522_fp16.zip -d MemoryAlive/Models
+          test -d MemoryAlive/Models/RealESRGAN_general_522_fp16.mlpackage
+
       - name: Generate Xcode project
         working-directory: ios
         run: xcodegen generate
