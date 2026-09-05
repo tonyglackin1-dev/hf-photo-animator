@@ -48,7 +48,18 @@ struct ContentView: View {
         }
         .onChange(of: pickerItem) { _, newValue in
             guard let newValue else { return }
-            Task { await model.load(item: newValue) }
+            Task {
+                do {
+                    guard let data = try await newValue.loadTransferable(type: Data.self),
+                          let image = UIImage(data: data) else {
+                        await MainActor.run { model.status = "Could not read that image." }
+                        return
+                    }
+                    await MainActor.run { model.load(image: image) }
+                } catch {
+                    await MainActor.run { model.status = error.localizedDescription }
+                }
+            }
         }
     }
 
