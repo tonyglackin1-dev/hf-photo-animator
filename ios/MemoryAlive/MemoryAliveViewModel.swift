@@ -1,5 +1,4 @@
 import Foundation
-import PhotosUI
 import UIKit
 
 @MainActor
@@ -10,18 +9,9 @@ final class MemoryAliveViewModel: ObservableObject {
 
     private let pipeline = PhotoPipeline()
 
-    func load(item: PhotosPickerItem) async {
-        do {
-            guard let data = try await item.loadTransferable(type: Data.self),
-                  let image = UIImage(data: data) else {
-                status = "Could not read that image."
-                return
-            }
-            previewImage = image
-            status = "Photo loaded."
-        } catch {
-            status = error.localizedDescription
-        }
+    func load(image: UIImage) {
+        previewImage = image
+        status = "Photo loaded."
     }
 
     func restore() {
