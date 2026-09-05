@@ -14,6 +14,8 @@ targets:
     platform: iOS
     sources:
       - path: MemoryAlive
+    resources:
+      - path: MemoryAlive/Models
     info:
       path: MemoryAlive/Info.plist
     settings:
