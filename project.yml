@@ -1,0 +1,24 @@
+name: MemoryAlive
+options:
+  bundleIdPrefix: com.tonyglackin
+settings:
+  base:
+    IPHONEOS_DEPLOYMENT_TARGET: 17.0
+    SWIFT_VERSION: 5.10
+targets:
+  MemoryAlive:
+    type: application
+    platform: iOS
+    sources:
+      - path: ios/MemoryAlive
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tonyglackin.memoryalive
+        TARGETED_DEVICE_FAMILY: 1
+    info:
+      path: ios/MemoryAlive/Info.plist
+      properties:
+        CFBundleDisplayName: Memory Alive
+        UILaunchScreen: {}
+        NSPhotoLibraryUsageDescription: Memory Alive lets you choose a photo to restore, colourise and animate entirely on your iPhone.
+        NSPhotoLibraryAddUsageDescription: Memory Alive can save the finished result back to your photo library.
