@@ -11,6 +11,7 @@ on:
 jobs:
   build:
     runs-on: macos-15
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -63,24 +64,41 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
-      - name: Boot simulator and launch visual demo
+      - name: Boot simulator and capture visual demo
         run: |
           set -euo pipefail
           DEVICE_ID=$(xcrun simctl create "MemoryAlive CI" "com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro" "com.apple.CoreSimulator.SimRuntime.iOS-18-5")
+          cleanup() {
+            xcrun simctl shutdown "$DEVICE_ID" >/dev/null 2>&1 || true
+            xcrun simctl delete "$DEVICE_ID" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
           xcrun simctl boot "$DEVICE_ID"
-          xcrun simctl bootstatus "$DEVICE_ID" -b
+
+          READY=0
+          for i in $(seq 1 60); do
+            STATE=$(xcrun simctl list devices | grep "$DEVICE_ID" || true)
+            if echo "$STATE" | grep -q "(Booted)"; then
+              READY=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$READY" -ne 1 ]; then
+            echo "Simulator did not reach Booted state within 120 seconds"
+            exit 1
+          fi
+
           xcrun simctl install "$DEVICE_ID" /tmp/MemoryAliveDerived/Build/Products/Debug-iphonesimulator/MemoryAlive.app
           mkdir -p /tmp/memory-alive-proof
+
           SIMCTL_CHILD_MEMORY_ALIVE_DEMO_IMAGE_URL="https://commons.wikimedia.org/wiki/Special:Redirect/file/HardingLooksBowtie.jpg" \
           SIMCTL_CHILD_MEMORY_ALIVE_DEMO_ACTION="animate" \
           xcrun simctl launch "$DEVICE_ID" com.tonyglackin.memoryalive
-          sleep 8
+
+          sleep 10
           xcrun simctl io "$DEVICE_ID" screenshot /tmp/memory-alive-proof/bring-to-life.png
-          xcrun simctl io "$DEVICE_ID" recordVideo --codec=h264 /tmp/memory-alive-proof/bring-to-life.mp4 >/tmp/recordvideo.log 2>&1 &
-          RECORDER_PID=$!
-          sleep 8
-          kill -INT "$RECORDER_PID" || true
-          wait "$RECORDER_PID" || true
           ls -lh /tmp/memory-alive-proof
 
       - name: Upload visual proof
