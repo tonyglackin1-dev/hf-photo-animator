@@ -1,5 +1,4 @@
 import CoreImage
-import CoreImage.CIFilterBuiltins
 import UIKit
 import Vision
 
@@ -19,6 +18,11 @@ actor PortraitAnimationService {
         let faceRect = imageRect(for: face.boundingBox, in: extent)
         let faceWidth = faceRect.width
         let totalFrames = Int(duration * Double(fps))
+
+        let leftEyeCenter = landmarks.leftEye.map { averagePoint(of: $0, faceRect: faceRect) }
+        let rightEyeCenter = landmarks.rightEye.map { averagePoint(of: $0, faceRect: faceRect) }
+        let mouthCenter = landmarks.outerLips.map { averagePoint(of: $0, faceRect: faceRect) }
+
         var frames: [UIImage] = []
         frames.reserveCapacity(totalFrames)
 
@@ -28,68 +32,71 @@ actor PortraitAnimationService {
 
             let blink = min(
                 1.0,
-                blinkAmount(t: t, center: 1.85, width: 0.19) +
-                0.72 * blinkAmount(t: t, center: 4.45, width: 0.17)
+                blinkAmount(t: t, center: 1.82, width: 0.18) +
+                0.78 * blinkAmount(t: t, center: 4.42, width: 0.16)
             )
 
-            // Slightly stronger eye drift and face motion so the effect is visible at normal phone size.
-            let eyeDX = CGFloat(sin(t * .pi * 0.58)) * faceWidth * 0.0058
-            let eyeDY = CGFloat(cos(t * .pi * 0.36)) * faceWidth * 0.0024
+            let eyeDX = CGFloat(sin(t * .pi * 0.58)) * faceWidth * 0.0040
+            let eyeDY = CGFloat(cos(t * .pi * 0.36)) * faceWidth * 0.0018
             let mouthPulse = CGFloat(sin(t * .pi * 0.46))
-            let headX = CGFloat(sin(t * .pi * 0.24)) * faceWidth * 0.010
-            let headY = CGFloat(cos(t * .pi * 0.20)) * faceWidth * 0.0040
-            let headRotation = CGFloat(sin(t * .pi * 0.22)) * 0.0070
+            let headX = CGFloat(sin(t * .pi * 0.24)) * faceWidth * 0.0065
+            let headY = CGFloat(cos(t * .pi * 0.20)) * faceWidth * 0.0028
+            let headRotation = CGFloat(sin(t * .pi * 0.22)) * 0.0048
+            let breathe = CGFloat(sin(t * .pi * 0.30)) * faceWidth * 0.0012
 
-            if let leftEye = landmarks.leftEye {
-                let center = averagePoint(of: leftEye, faceRect: faceRect)
-                ciImage = applyBump(
-                    to: ciImage,
+            // Move the face as one softly blended region so the head feels structural,
+            // while the background remains almost completely stable.
+            ciImage = localAffineWarp(
+                image: ciImage,
+                center: CGPoint(x: faceRect.midX, y: faceRect.midY),
+                radiusX: faceWidth * 0.58,
+                radiusY: faceRect.height * 0.62,
+                transform: CGAffineTransform(translationX: headX, y: headY + breathe)
+                    .rotated(by: headRotation),
+                feather: 0.34
+            )
+
+            // Blink by compressing each eye vertically around its own landmark center.
+            // This is more controlled than radial bump distortion and avoids rubbery cheeks.
+            let eyelidScale = max(0.22, 1.0 - CGFloat(blink) * 0.78)
+            if let center = leftEyeCenter {
+                ciImage = localAffineWarp(
+                    image: ciImage,
                     center: CGPoint(x: center.x + eyeDX, y: center.y + eyeDY),
-                    radius: faceWidth * 0.095,
-                    scale: Float(-0.155 * blink)
+                    radiusX: faceWidth * 0.105,
+                    radiusY: faceWidth * 0.060,
+                    transform: CGAffineTransform(scaleX: 1.0, y: eyelidScale),
+                    feather: 0.24
                 )
             }
 
-            if let rightEye = landmarks.rightEye {
-                let center = averagePoint(of: rightEye, faceRect: faceRect)
-                ciImage = applyBump(
-                    to: ciImage,
+            if let center = rightEyeCenter {
+                ciImage = localAffineWarp(
+                    image: ciImage,
                     center: CGPoint(x: center.x + eyeDX, y: center.y + eyeDY),
-                    radius: faceWidth * 0.095,
-                    scale: Float(-0.155 * blink)
+                    radiusX: faceWidth * 0.105,
+                    radiusY: faceWidth * 0.060,
+                    transform: CGAffineTransform(scaleX: 1.0, y: eyelidScale),
+                    feather: 0.24
                 )
             }
 
-            if let outerLips = landmarks.outerLips {
-                let center = averagePoint(of: outerLips, faceRect: faceRect)
-                ciImage = applyBump(
-                    to: ciImage,
-                    center: CGPoint(
-                        x: center.x + faceWidth * 0.0015 * mouthPulse,
-                        y: center.y + faceWidth * 0.0065 * mouthPulse
-                    ),
-                    radius: faceWidth * 0.15,
-                    scale: Float(0.034 * mouthPulse)
-                )
-            }
-
-            if let nose = landmarks.nose {
-                let center = averagePoint(of: nose, faceRect: faceRect)
-                let breath = CGFloat(sin(t * .pi * 0.32))
-                ciImage = applyBump(
-                    to: ciImage,
+            // Gently lift and soften the mouth region without inflating the whole lower face.
+            if let center = mouthCenter {
+                let smileLift = faceWidth * 0.0055 * mouthPulse
+                let mouthScaleY = 1.0 + 0.025 * mouthPulse
+                ciImage = localAffineWarp(
+                    image: ciImage,
                     center: center,
-                    radius: faceWidth * 0.23,
-                    scale: Float(0.010 * breath)
+                    radiusX: faceWidth * 0.155,
+                    radiusY: faceWidth * 0.085,
+                    transform: CGAffineTransform(translationX: faceWidth * 0.0012 * mouthPulse, y: smileLift)
+                        .scaledBy(x: 1.0, y: mouthScaleY),
+                    feather: 0.30
                 )
             }
 
-            let pivot = CGPoint(x: faceRect.midX, y: faceRect.midY)
-            let transform = CGAffineTransform(translationX: pivot.x, y: pivot.y)
-                .rotated(by: headRotation)
-                .translatedBy(x: -pivot.x + headX, y: -pivot.y + headY)
-
-            let rendered = ciImage.transformed(by: transform).cropped(to: extent)
+            let rendered = ciImage.cropped(to: extent)
             guard let cgImage = context.createCGImage(rendered, from: extent) else {
                 throw PipelineError.processingFailed("Could not render portrait animation frames.")
             }
@@ -104,18 +111,42 @@ actor PortraitAnimationService {
         return exp(-x * x * 6.0)
     }
 
-    private func applyBump(
-        to image: CIImage,
+    private func localAffineWarp(
+        image: CIImage,
         center: CGPoint,
-        radius: CGFloat,
-        scale: Float
+        radiusX: CGFloat,
+        radiusY: CGFloat,
+        transform: CGAffineTransform,
+        feather: CGFloat
     ) -> CIImage {
-        let filter = CIFilter.bumpDistortion()
-        filter.inputImage = image
-        filter.center = center
-        filter.radius = Float(radius)
-        filter.scale = scale
-        return filter.outputImage ?? image
+        guard radiusX > 1, radiusY > 1 else { return image }
+
+        let local = CGAffineTransform(translationX: -center.x, y: -center.y)
+            .concatenating(transform)
+            .concatenating(CGAffineTransform(translationX: center.x, y: center.y))
+
+        let warped = image.transformed(by: local).cropped(to: image.extent)
+
+        guard let gradient = CIFilter(name: "CIRadialGradient") else { return image }
+        gradient.setValue(CIVector(cgPoint: center), forKey: "inputCenter")
+        gradient.setValue(Float(min(radiusX, radiusY) * max(0.05, 1.0 - feather)), forKey: "inputRadius0")
+        gradient.setValue(Float(max(radiusX, radiusY)), forKey: "inputRadius1")
+        gradient.setValue(CIColor(red: 1, green: 1, blue: 1, alpha: 1), forKey: "inputColor0")
+        gradient.setValue(CIColor(red: 0, green: 0, blue: 0, alpha: 1), forKey: "inputColor1")
+
+        guard let radialMask = gradient.outputImage?.cropped(to: image.extent) else { return image }
+
+        // Squash the circular mask into an ellipse that matches the landmark region.
+        let maskScale = CGAffineTransform(translationX: center.x, y: center.y)
+            .scaledBy(x: radiusX / max(radiusX, radiusY), y: radiusY / max(radiusX, radiusY))
+            .translatedBy(x: -center.x, y: -center.y)
+        let mask = radialMask.transformed(by: maskScale).cropped(to: image.extent)
+
+        guard let blend = CIFilter(name: "CIBlendWithMask") else { return image }
+        blend.setValue(warped, forKey: kCIInputImageKey)
+        blend.setValue(image, forKey: kCIInputBackgroundImageKey)
+        blend.setValue(mask, forKey: kCIInputMaskImageKey)
+        return blend.outputImage ?? image
     }
 
     private func imageRect(for normalizedFaceRect: CGRect, in extent: CGRect) -> CGRect {
