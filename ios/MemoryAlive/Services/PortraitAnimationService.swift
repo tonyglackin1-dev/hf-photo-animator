@@ -4,6 +4,9 @@ import UIKit
 import Vision
 
 actor PortraitAnimationService {
+    private let fps = 18
+    private let duration: Double = 6.0
+
     func previewFrames(image: UIImage, face: VNFaceObservation, context: CIContext) async throws -> [UIImage] {
         guard let baseImage = CIImage(image: image) else {
             throw PipelineError.invalidImage
@@ -15,20 +18,34 @@ actor PortraitAnimationService {
         let extent = baseImage.extent
         let faceRect = imageRect(for: face.boundingBox, in: extent)
         let faceWidth = faceRect.width
-
-        let phases: [CGFloat] = [0.0, 0.35, 0.7, 1.0, 0.7, 0.35, 0.0, -0.2]
+        let totalFrames = Int(duration * Double(fps))
         var frames: [UIImage] = []
+        frames.reserveCapacity(totalFrames)
 
-        for phase in phases {
+        for frameIndex in 0..<totalFrames {
+            let t = Double(frameIndex) / Double(fps)
             var ciImage = baseImage
+
+            let blink = min(
+                1.0,
+                blinkAmount(t: t, center: 1.9, width: 0.15) +
+                0.58 * blinkAmount(t: t, center: 4.55, width: 0.13)
+            )
+
+            let eyeDX = CGFloat(sin(t * .pi * 0.55)) * faceWidth * 0.0035
+            let eyeDY = CGFloat(cos(t * .pi * 0.33)) * faceWidth * 0.0015
+            let mouthPulse = CGFloat(sin(t * .pi * 0.42))
+            let headX = CGFloat(sin(t * .pi * 0.22)) * faceWidth * 0.006
+            let headY = CGFloat(cos(t * .pi * 0.18)) * faceWidth * 0.0025
+            let headRotation = CGFloat(sin(t * .pi * 0.20)) * 0.0048
 
             if let leftEye = landmarks.leftEye {
                 let center = averagePoint(of: leftEye, faceRect: faceRect)
                 ciImage = applyBump(
                     to: ciImage,
-                    center: CGPoint(x: center.x + faceWidth * 0.003 * phase, y: center.y),
-                    radius: faceWidth * 0.12,
-                    scale: Float(-0.020 * phase)
+                    center: CGPoint(x: center.x + eyeDX, y: center.y + eyeDY),
+                    radius: faceWidth * 0.105,
+                    scale: Float(-0.095 * blink)
                 )
             }
 
@@ -36,9 +53,9 @@ actor PortraitAnimationService {
                 let center = averagePoint(of: rightEye, faceRect: faceRect)
                 ciImage = applyBump(
                     to: ciImage,
-                    center: CGPoint(x: center.x + faceWidth * 0.003 * phase, y: center.y),
-                    radius: faceWidth * 0.12,
-                    scale: Float(-0.020 * phase)
+                    center: CGPoint(x: center.x + eyeDX, y: center.y + eyeDY),
+                    radius: faceWidth * 0.105,
+                    scale: Float(-0.095 * blink)
                 )
             }
 
@@ -46,16 +63,30 @@ actor PortraitAnimationService {
                 let center = averagePoint(of: outerLips, faceRect: faceRect)
                 ciImage = applyBump(
                     to: ciImage,
-                    center: CGPoint(x: center.x, y: center.y + faceWidth * 0.010 * phase),
-                    radius: faceWidth * 0.18,
-                    scale: Float(0.025 * phase)
+                    center: CGPoint(
+                        x: center.x,
+                        y: center.y + faceWidth * 0.004 * mouthPulse
+                    ),
+                    radius: faceWidth * 0.16,
+                    scale: Float(0.022 * mouthPulse)
                 )
             }
 
-            let transform = CGAffineTransform(
-                translationX: faceWidth * 0.004 * phase,
-                y: faceWidth * 0.0015 * phase
-            ).rotated(by: 0.0018 * phase)
+            if let nose = landmarks.nose {
+                let center = averagePoint(of: nose, faceRect: faceRect)
+                let breath = CGFloat(sin(t * .pi * 0.30))
+                ciImage = applyBump(
+                    to: ciImage,
+                    center: center,
+                    radius: faceWidth * 0.24,
+                    scale: Float(0.006 * breath)
+                )
+            }
+
+            let pivot = CGPoint(x: faceRect.midX, y: faceRect.midY)
+            let transform = CGAffineTransform(translationX: pivot.x, y: pivot.y)
+                .rotated(by: headRotation)
+                .translatedBy(x: -pivot.x + headX, y: -pivot.y + headY)
 
             let rendered = ciImage.transformed(by: transform).cropped(to: extent)
             guard let cgImage = context.createCGImage(rendered, from: extent) else {
@@ -65,6 +96,11 @@ actor PortraitAnimationService {
         }
 
         return frames
+    }
+
+    private func blinkAmount(t: Double, center: Double, width: Double) -> Double {
+        let x = (t - center) / width
+        return exp(-x * x * 6.0)
     }
 
     private func applyBump(
