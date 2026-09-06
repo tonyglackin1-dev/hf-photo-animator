@@ -99,29 +99,57 @@ jobs:
           SIMCTL_CHILD_MEMORY_ALIVE_DEMO_ACTION="animate" \
           xcrun simctl launch "$DEVICE_ID" com.tonyglackin.memoryalive
 
-          sleep 10
+          sleep 12
           xcrun simctl io "$DEVICE_ID" screenshot /tmp/memory-alive-proof/bring-to-life.png
 
           RAW_VIDEO=/tmp/memory-alive-proof/bring-to-life-raw.mp4
           FINAL_VIDEO=/tmp/memory-alive-proof/bring-to-life.mp4
+          : > /tmp/recordvideo.log
 
-          echo "Recording 6-second Bring to Life proof video"
+          echo "Starting Bring to Life proof video recorder"
           xcrun simctl io "$DEVICE_ID" recordVideo --codec=h264 --force "$RAW_VIDEO" >/tmp/recordvideo.log 2>&1 &
           RECORDER_PID=$!
-          sleep 6
-          kill -INT "$RECORDER_PID" >/dev/null 2>&1 || true
 
-          for i in $(seq 1 30); do
+          STARTED=0
+          for i in $(seq 1 60); do
+            if grep -q "Recording started" /tmp/recordvideo.log 2>/dev/null; then
+              STARTED=1
+              break
+            fi
             if ! kill -0 "$RECORDER_PID" >/dev/null 2>&1; then
               break
             fi
             sleep 1
           done
 
-          if kill -0 "$RECORDER_PID" >/dev/null 2>&1; then
-            echo "recordVideo failed to exit cleanly after SIGINT"
+          if [ "$STARTED" -ne 1 ]; then
+            echo "Video recorder never reported Recording started"
             cat /tmp/recordvideo.log || true
+            kill -TERM "$RECORDER_PID" >/dev/null 2>&1 || true
             exit 1
+          fi
+
+          echo "Recorder is active; capturing 6 seconds"
+          sleep 6
+          kill -INT "$RECORDER_PID" >/dev/null 2>&1 || true
+
+          STOPPED=0
+          for i in $(seq 1 10); do
+            if ! kill -0 "$RECORDER_PID" >/dev/null 2>&1; then
+              STOPPED=1
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$STOPPED" -ne 1 ]; then
+            echo "Recorder still alive after SIGINT; asking simulator to shut down recording cleanly"
+            xcrun simctl shutdown "$DEVICE_ID" >/dev/null 2>&1 || true
+            sleep 3
+            if kill -0 "$RECORDER_PID" >/dev/null 2>&1; then
+              kill -TERM "$RECORDER_PID" >/dev/null 2>&1 || true
+              sleep 2
+            fi
           fi
 
           wait "$RECORDER_PID" || true
