@@ -99,9 +99,41 @@ jobs:
 
           sleep 10
           xcrun simctl io "$DEVICE_ID" screenshot /tmp/memory-alive-proof/bring-to-life.png
+
+          echo "Recording 6-second Bring to Life proof video"
+          xcrun simctl io "$DEVICE_ID" recordVideo --codec=h264 --force /tmp/memory-alive-proof/bring-to-life.mp4 >/tmp/recordvideo.log 2>&1 &
+          RECORDER_PID=$!
+          sleep 6
+          kill -INT "$RECORDER_PID" >/dev/null 2>&1 || true
+
+          STOPPED=0
+          for i in $(seq 1 20); do
+            if ! kill -0 "$RECORDER_PID" >/dev/null 2>&1; then
+              STOPPED=1
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$STOPPED" -ne 1 ]; then
+            echo "recordVideo did not stop after SIGINT; terminating it"
+            kill -TERM "$RECORDER_PID" >/dev/null 2>&1 || true
+            sleep 2
+            kill -KILL "$RECORDER_PID" >/dev/null 2>&1 || true
+          fi
+
+          cat /tmp/recordvideo.log || true
+          test -s /tmp/memory-alive-proof/bring-to-life.png
+          if [ -s /tmp/memory-alive-proof/bring-to-life.mp4 ]; then
+            echo "Video proof captured successfully"
+          else
+            echo "Video proof was not finalized; keeping screenshot proof and failing this step for visibility"
+            exit 1
+          fi
           ls -lh /tmp/memory-alive-proof
 
       - name: Upload visual proof
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: memory-alive-simulator-proof
