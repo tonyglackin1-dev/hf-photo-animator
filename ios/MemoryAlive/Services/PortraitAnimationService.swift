@@ -28,24 +28,25 @@ actor PortraitAnimationService {
 
             let blink = min(
                 1.0,
-                blinkAmount(t: t, center: 1.9, width: 0.15) +
-                0.58 * blinkAmount(t: t, center: 4.55, width: 0.13)
+                blinkAmount(t: t, center: 1.85, width: 0.19) +
+                0.72 * blinkAmount(t: t, center: 4.45, width: 0.17)
             )
 
-            let eyeDX = CGFloat(sin(t * .pi * 0.55)) * faceWidth * 0.0035
-            let eyeDY = CGFloat(cos(t * .pi * 0.33)) * faceWidth * 0.0015
-            let mouthPulse = CGFloat(sin(t * .pi * 0.42))
-            let headX = CGFloat(sin(t * .pi * 0.22)) * faceWidth * 0.006
-            let headY = CGFloat(cos(t * .pi * 0.18)) * faceWidth * 0.0025
-            let headRotation = CGFloat(sin(t * .pi * 0.20)) * 0.0048
+            // Slightly stronger eye drift and face motion so the effect is visible at normal phone size.
+            let eyeDX = CGFloat(sin(t * .pi * 0.58)) * faceWidth * 0.0058
+            let eyeDY = CGFloat(cos(t * .pi * 0.36)) * faceWidth * 0.0024
+            let mouthPulse = CGFloat(sin(t * .pi * 0.46))
+            let headX = CGFloat(sin(t * .pi * 0.24)) * faceWidth * 0.010
+            let headY = CGFloat(cos(t * .pi * 0.20)) * faceWidth * 0.0040
+            let headRotation = CGFloat(sin(t * .pi * 0.22)) * 0.0070
 
             if let leftEye = landmarks.leftEye {
                 let center = averagePoint(of: leftEye, faceRect: faceRect)
                 ciImage = applyBump(
                     to: ciImage,
                     center: CGPoint(x: center.x + eyeDX, y: center.y + eyeDY),
-                    radius: faceWidth * 0.105,
-                    scale: Float(-0.095 * blink)
+                    radius: faceWidth * 0.095,
+                    scale: Float(-0.155 * blink)
                 )
             }
 
@@ -54,8 +55,8 @@ actor PortraitAnimationService {
                 ciImage = applyBump(
                     to: ciImage,
                     center: CGPoint(x: center.x + eyeDX, y: center.y + eyeDY),
-                    radius: faceWidth * 0.105,
-                    scale: Float(-0.095 * blink)
+                    radius: faceWidth * 0.095,
+                    scale: Float(-0.155 * blink)
                 )
             }
 
@@ -64,22 +65,22 @@ actor PortraitAnimationService {
                 ciImage = applyBump(
                     to: ciImage,
                     center: CGPoint(
-                        x: center.x,
-                        y: center.y + faceWidth * 0.004 * mouthPulse
+                        x: center.x + faceWidth * 0.0015 * mouthPulse,
+                        y: center.y + faceWidth * 0.0065 * mouthPulse
                     ),
-                    radius: faceWidth * 0.16,
-                    scale: Float(0.022 * mouthPulse)
+                    radius: faceWidth * 0.15,
+                    scale: Float(0.034 * mouthPulse)
                 )
             }
 
             if let nose = landmarks.nose {
                 let center = averagePoint(of: nose, faceRect: faceRect)
-                let breath = CGFloat(sin(t * .pi * 0.30))
+                let breath = CGFloat(sin(t * .pi * 0.32))
                 ciImage = applyBump(
                     to: ciImage,
                     center: center,
-                    radius: faceWidth * 0.24,
-                    scale: Float(0.006 * breath)
+                    radius: faceWidth * 0.23,
+                    scale: Float(0.010 * breath)
                 )
             }
 
