@@ -19,8 +19,10 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Install XcodeGen and ffmpeg
+        run: |
+          brew install xcodegen
+          brew install ffmpeg
 
       - name: Fetch Real-ESRGAN Core ML model
         working-directory: ios
@@ -100,36 +102,43 @@ jobs:
           sleep 10
           xcrun simctl io "$DEVICE_ID" screenshot /tmp/memory-alive-proof/bring-to-life.png
 
+          RAW_VIDEO=/tmp/memory-alive-proof/bring-to-life-raw.mp4
+          FINAL_VIDEO=/tmp/memory-alive-proof/bring-to-life.mp4
+
           echo "Recording 6-second Bring to Life proof video"
-          xcrun simctl io "$DEVICE_ID" recordVideo --codec=h264 --force /tmp/memory-alive-proof/bring-to-life.mp4 >/tmp/recordvideo.log 2>&1 &
+          xcrun simctl io "$DEVICE_ID" recordVideo --codec=h264 --force "$RAW_VIDEO" >/tmp/recordvideo.log 2>&1 &
           RECORDER_PID=$!
           sleep 6
           kill -INT "$RECORDER_PID" >/dev/null 2>&1 || true
 
-          STOPPED=0
-          for i in $(seq 1 20); do
+          for i in $(seq 1 30); do
             if ! kill -0 "$RECORDER_PID" >/dev/null 2>&1; then
-              STOPPED=1
               break
             fi
             sleep 1
           done
 
-          if [ "$STOPPED" -ne 1 ]; then
-            echo "recordVideo did not stop after SIGINT; terminating it"
-            kill -TERM "$RECORDER_PID" >/dev/null 2>&1 || true
-            sleep 2
-            kill -KILL "$RECORDER_PID" >/dev/null 2>&1 || true
-          fi
-
-          cat /tmp/recordvideo.log || true
-          test -s /tmp/memory-alive-proof/bring-to-life.png
-          if [ -s /tmp/memory-alive-proof/bring-to-life.mp4 ]; then
-            echo "Video proof captured successfully"
-          else
-            echo "Video proof was not finalized; keeping screenshot proof and failing this step for visibility"
+          if kill -0 "$RECORDER_PID" >/dev/null 2>&1; then
+            echo "recordVideo failed to exit cleanly after SIGINT"
+            cat /tmp/recordvideo.log || true
             exit 1
           fi
+
+          wait "$RECORDER_PID" || true
+          cat /tmp/recordvideo.log || true
+
+          test -s /tmp/memory-alive-proof/bring-to-life.png
+          test -s "$RAW_VIDEO"
+
+          echo "Validating raw simulator video"
+          ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1 "$RAW_VIDEO"
+
+          echo "Remuxing MP4 for broad playback compatibility"
+          ffmpeg -y -v error -i "$RAW_VIDEO" -c copy -movflags +faststart "$FINAL_VIDEO"
+          ffprobe -v error -show_entries format=duration:stream=codec_name,width,height -of default=noprint_wrappers=1 "$FINAL_VIDEO"
+          test -s "$FINAL_VIDEO"
+
+          rm -f "$RAW_VIDEO"
           ls -lh /tmp/memory-alive-proof
 
       - name: Upload visual proof
