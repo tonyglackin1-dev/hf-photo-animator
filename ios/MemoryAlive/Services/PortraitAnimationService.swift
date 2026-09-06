@@ -30,19 +30,23 @@ actor PortraitAnimationService {
             let t = Double(frameIndex) / Double(fps)
             var ciImage = baseImage
 
+            // Two short, readable blinks. The second is slightly softer so the motion
+            // feels less mechanical when the six-second loop repeats.
             let blink = min(
                 1.0,
-                blinkAmount(t: t, center: 1.82, width: 0.18) +
-                0.78 * blinkAmount(t: t, center: 4.42, width: 0.16)
+                blinkAmount(t: t, center: 1.78, width: 0.12) +
+                0.84 * blinkAmount(t: t, center: 4.38, width: 0.11)
             )
 
-            let eyeDX = CGFloat(sin(t * .pi * 0.58)) * faceWidth * 0.0040
-            let eyeDY = CGFloat(cos(t * .pi * 0.36)) * faceWidth * 0.0018
+            // Motion amplitudes are deliberately scaled to face size so they remain
+            // visible in the larger preview without turning into a rubber-face effect.
+            let eyeDX = CGFloat(sin(t * .pi * 0.62)) * faceWidth * 0.0052
+            let eyeDY = CGFloat(cos(t * .pi * 0.41)) * faceWidth * 0.0022
             let mouthPulse = CGFloat(sin(t * .pi * 0.46))
-            let headX = CGFloat(sin(t * .pi * 0.24)) * faceWidth * 0.0065
-            let headY = CGFloat(cos(t * .pi * 0.20)) * faceWidth * 0.0028
-            let headRotation = CGFloat(sin(t * .pi * 0.22)) * 0.0048
-            let breathe = CGFloat(sin(t * .pi * 0.30)) * faceWidth * 0.0012
+            let headX = CGFloat(sin(t * .pi * 0.24)) * faceWidth * 0.0072
+            let headY = CGFloat(cos(t * .pi * 0.20)) * faceWidth * 0.0032
+            let headRotation = CGFloat(sin(t * .pi * 0.22)) * 0.0054
+            let breathe = CGFloat(sin(t * .pi * 0.30)) * faceWidth * 0.0015
 
             // Move the face as one softly blended region so the head feels structural,
             // while the background remains almost completely stable.
@@ -56,43 +60,47 @@ actor PortraitAnimationService {
                 feather: 0.34
             )
 
-            // Blink by compressing each eye vertically around its own landmark center.
-            // This is more controlled than radial bump distortion and avoids rubbery cheeks.
-            let eyelidScale = max(0.22, 1.0 - CGFloat(blink) * 0.78)
+            // Eyes get a real local drift plus asymmetric eyelid motion. The upper lid
+            // moves farther than the lower lid, which reads much more like a natural blink.
             if let center = leftEyeCenter {
-                ciImage = localAffineWarp(
+                ciImage = animateEye(
                     image: ciImage,
-                    center: CGPoint(x: center.x + eyeDX, y: center.y + eyeDY),
-                    radiusX: faceWidth * 0.105,
-                    radiusY: faceWidth * 0.060,
-                    transform: CGAffineTransform(scaleX: 1.0, y: eyelidScale),
-                    feather: 0.24
+                    center: center,
+                    faceWidth: faceWidth,
+                    blink: CGFloat(blink),
+                    eyeDX: eyeDX,
+                    eyeDY: eyeDY
                 )
             }
 
             if let center = rightEyeCenter {
-                ciImage = localAffineWarp(
+                ciImage = animateEye(
                     image: ciImage,
-                    center: CGPoint(x: center.x + eyeDX, y: center.y + eyeDY),
-                    radiusX: faceWidth * 0.105,
-                    radiusY: faceWidth * 0.060,
-                    transform: CGAffineTransform(scaleX: 1.0, y: eyelidScale),
-                    feather: 0.24
+                    center: center,
+                    faceWidth: faceWidth,
+                    blink: CGFloat(blink),
+                    eyeDX: eyeDX,
+                    eyeDY: eyeDY
                 )
             }
 
-            // Gently lift and soften the mouth region without inflating the whole lower face.
+            // A restrained mouth softening: slight corner-like lift, tiny horizontal drift,
+            // and a small vertical opening/closing change. Kept below the level of a grin.
             if let center = mouthCenter {
-                let smileLift = faceWidth * 0.0055 * mouthPulse
-                let mouthScaleY = 1.0 + 0.025 * mouthPulse
+                let mouthLift = faceWidth * 0.0080 * mouthPulse
+                let mouthScaleY = 1.0 + 0.038 * mouthPulse
+                let mouthScaleX = 1.0 + 0.010 * abs(mouthPulse)
                 ciImage = localAffineWarp(
                     image: ciImage,
                     center: center,
-                    radiusX: faceWidth * 0.155,
-                    radiusY: faceWidth * 0.085,
-                    transform: CGAffineTransform(translationX: faceWidth * 0.0012 * mouthPulse, y: smileLift)
-                        .scaledBy(x: 1.0, y: mouthScaleY),
-                    feather: 0.30
+                    radiusX: faceWidth * 0.165,
+                    radiusY: faceWidth * 0.090,
+                    transform: CGAffineTransform(
+                        translationX: faceWidth * 0.0018 * mouthPulse,
+                        y: mouthLift
+                    )
+                    .scaledBy(x: mouthScaleX, y: mouthScaleY),
+                    feather: 0.28
                 )
             }
 
@@ -104,6 +112,62 @@ actor PortraitAnimationService {
         }
 
         return frames
+    }
+
+    private func animateEye(
+        image: CIImage,
+        center: CGPoint,
+        faceWidth: CGFloat,
+        blink: CGFloat,
+        eyeDX: CGFloat,
+        eyeDY: CGFloat
+    ) -> CIImage {
+        var result = image
+
+        // Base eye drift affects the actual pixels, not only the mask location.
+        result = localAffineWarp(
+            image: result,
+            center: center,
+            radiusX: faceWidth * 0.110,
+            radiusY: faceWidth * 0.060,
+            transform: CGAffineTransform(translationX: eyeDX, y: eyeDY),
+            feather: 0.34
+        )
+
+        guard blink > 0.001 else { return result }
+
+        let upperCenter = CGPoint(x: center.x + eyeDX, y: center.y + eyeDY + faceWidth * 0.012)
+        let lowerCenter = CGPoint(x: center.x + eyeDX, y: center.y + eyeDY - faceWidth * 0.011)
+
+        // Upper lid: stronger downward travel and compression.
+        result = localAffineWarp(
+            image: result,
+            center: upperCenter,
+            radiusX: faceWidth * 0.105,
+            radiusY: faceWidth * 0.038,
+            transform: CGAffineTransform(
+                translationX: 0,
+                y: -faceWidth * 0.021 * blink
+            )
+            .scaledBy(x: 1.0, y: max(0.42, 1.0 - 0.58 * blink)),
+            feather: 0.20
+        )
+
+        // Lower lid: smaller upward response to keep the blink soft and believable.
+        result = localAffineWarp(
+            image: result,
+            center: lowerCenter,
+            radiusX: faceWidth * 0.102,
+            radiusY: faceWidth * 0.030,
+            transform: CGAffineTransform(
+                translationX: 0,
+                y: faceWidth * 0.008 * blink
+            )
+            .scaledBy(x: 1.0, y: max(0.70, 1.0 - 0.24 * blink)),
+            feather: 0.22
+        )
+
+        return result
     }
 
     private func blinkAmount(t: Double, center: Double, width: Double) -> Double {
