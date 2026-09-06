@@ -7,44 +7,49 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 18) {
-                Group {
-                    if let image = model.previewImage {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .clipShape(RoundedRectangle(cornerRadius: 18))
+            ScrollView {
+                VStack(spacing: 18) {
+                    Group {
+                        if let image = model.previewImage {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxWidth: .infinity)
+                                .clipShape(RoundedRectangle(cornerRadius: 18))
+                        } else {
+                            RoundedRectangle(cornerRadius: 18)
+                                .fill(.secondary.opacity(0.12))
+                                .overlay(Text("Choose an old photo"))
+                                .aspectRatio(4/5, contentMode: .fit)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 470, maxHeight: 720)
+
+                    PhotosPicker(selection: $pickerItem, matching: .images) {
+                        Label("Choose Photo", systemImage: "photo")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    HStack {
+                        actionButton("Restore", systemImage: "wand.and.stars", action: model.restore)
+                        actionButton("Colourise", systemImage: "paintpalette", action: model.colourise)
+                        actionButton("Bring to Life", systemImage: "face.smiling", action: model.animatePortrait)
+                    }
+
+                    if model.isWorking {
+                        ProgressView(model.status)
                     } else {
-                        RoundedRectangle(cornerRadius: 18)
-                            .fill(.secondary.opacity(0.12))
-                            .overlay(Text("Choose an old photo"))
-                            .aspectRatio(4/5, contentMode: .fit)
+                        Text(model.status)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                 }
-                .frame(maxHeight: 520)
-
-                PhotosPicker(selection: $pickerItem, matching: .images) {
-                    Label("Choose Photo", systemImage: "photo")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-
-                HStack {
-                    actionButton("Restore", systemImage: "wand.and.stars", action: model.restore)
-                    actionButton("Colourise", systemImage: "paintpalette", action: model.colourise)
-                    actionButton("Bring to Life", systemImage: "face.smiling", action: model.animatePortrait)
-                }
-
-                if model.isWorking {
-                    ProgressView(model.status)
-                } else {
-                    Text(model.status)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
+                .padding()
             }
-            .padding()
             .navigationTitle("Memory Alive")
+            .navigationBarTitleDisplayMode(.inline)
         }
         .onChange(of: pickerItem) { _, newValue in
             guard let newValue else { return }
